@@ -1,4 +1,3 @@
-pandas
-openpyxl
-deep-translator
-tk
+pandas~=2.2
+openpyxl~=3.1
+deep-translator~=1.11

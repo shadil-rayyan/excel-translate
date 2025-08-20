@@ -1,109 +1,114 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import pandas as pd
+import os
 import re
-from deep_translator import GoogleTranslator
+import glob
 from datetime import datetime
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 
-# === FUNCTION: Check if text needs translation ===
-def is_symbolic_only(text):
+from excel_translate.gui import launch_gui as _launch_gui
+import pandas as pd
+# deep_translator is imported lazily in excel_translate.gui/utils; not needed here
+
+# -----------------------------
+# Utilities
+# -----------------------------
+
+def is_symbolic_only(text: str) -> bool:
+    """Return True if the text has no alphanumerics after removing placeholders.
+    This helps avoid translating strings that are only punctuation or placeholders.
+    """
     if not isinstance(text, str):
         return True
-    cleaned = re.sub(r'\{[^}]+\}', '', text)
-    cleaned = re.sub(r'[^\w]', '', cleaned)
+    cleaned = re.sub(r"\{[^}]+\}", "", text)
+    cleaned = re.sub(r"[^\w]", "", cleaned)
     return len(cleaned.strip()) == 0
 
-# === FUNCTION: Translate text while preserving placeholders like {a}, {b} ===
-def translate_preserving_brackets(text, target_lang):
+
+def translate_preserving_brackets(text: str, target_lang: str) -> str:
+    """Translate text to target_lang while preserving {a}, {b} ... placeholders."""
     if not isinstance(text, str) or is_symbolic_only(text):
         return text
-
     try:
-        # Temporarily mask {a}, {b}, etc.
-        placeholders = re.findall(r'\{[^}]+\}', text)
+        placeholders = re.findall(r"\{[^}]+\}", text)
         masked_text = text
         for i, ph in enumerate(placeholders):
             masked_text = masked_text.replace(ph, f"___PLACEHOLDER_{i}___")
 
-        # Translate
         translated = GoogleTranslator(source='en', target=target_lang).translate(masked_text)
 
-        # Restore placeholders
         for i, ph in enumerate(placeholders):
             translated = translated.replace(f"___PLACEHOLDER_{i}___", ph)
-
         return translated
-    except Exception as e:
-        print(f"❌ Translation error: {e}")
+    except Exception:
+        # On any error, return original text
         return text
 
-# === FUNCTION: Perform Translation ===
-def perform_translation(file_path, selected_langs, status_label):
+
+def find_excel_files(selected_files, selected_folder, recursive: bool) -> list:
+    """Return a de-duplicated list of .xlsx files from inputs."""
+    files = []
+    # Explicit files (tuple from askopenfilenames)
+    if selected_files:
+        files.extend([p for p in selected_files if p.lower().endswith('.xlsx')])
+
+    # From folder
+    if selected_folder:
+        pattern = "**/*.xlsx" if recursive else "*.xlsx"
+        folder_glob = glob.glob(os.path.join(selected_folder, pattern), recursive=recursive)
+        files.extend(folder_glob)
+
+    # De-duplicate preserving order
+    seen = set()
+    unique = []
+    for p in files:
+        if p not in seen:
+            unique.append(p)
+            seen.add(p)
+    return unique
+
+
+def scan_columns_from_first_file(file_paths: list) -> list:
+    """Read the first file's first sheet columns as the default column set."""
+    if not file_paths:
+        return []
     try:
-        df = pd.read_excel(file_path)
-        question_col = df.columns[0]  # Only first column is translated
-        status_label.config(text="🔁 Translating...")
+        # Read first sheet only to keep it quick
+        df = pd.read_excel(file_paths[0], sheet_name=0)
+        return list(df.columns)
+    except Exception:
+        return []
 
-        for lang in selected_langs:
-            translated_col_name = f"{question_col}_{lang}"
-            df[translated_col_name] = df[question_col].apply(lambda text: translate_preserving_brackets(text, lang))
 
-        output_file = f"translated_output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        df.to_excel(output_file, index=False)
+def translate_dataframe_columns(df: pd.DataFrame, columns: list, lang_codes: list) -> dict:
+    """Translate selected columns in df into each language and return basic stats.
 
-        status_label.config(text=f"✅ Saved: {output_file}")
-        messagebox.showinfo("Success", f"Translated file saved as:\n{output_file}")
-    except Exception as e:
-        status_label.config(text="❌ Error")
-        messagebox.showerror("Error", str(e))
+    Returns stats dict with totals.
+    """
+    attempted = 0
+    changed = 0
+    for col in columns:
+        if col not in df.columns:
+            continue
+        for lang in lang_codes:
+            out_col = f"{col}_{lang}"
+            def _tx(val):
+                nonlocal attempted, changed
+                if isinstance(val, str) and not is_symbolic_only(val):
+                    attempted += 1
+                    t = translate_preserving_brackets(val, lang)
+                    if t != val:
+                        changed += 1
+                    return t
+                return val
+            df[out_col] = df[col].apply(_tx)
+    return {"attempted": attempted, "changed": changed}
 
-# === GUI Launcher ===
-def launch_gui():
-    supported_langs = GoogleTranslator(source='en', target='hi').get_supported_languages(as_dict=True)
 
-    def browse_file():
-        path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
-        if path:
-            file_entry.delete(0, tk.END)
-            file_entry.insert(0, path)
+# -----------------------------
+# GUI
+# -----------------------------
 
-    def start_translation():
-        path = file_entry.get()
-        selected = [lang_codes[i] for i in lang_listbox.curselection()]
-        if not path or not selected:
-            messagebox.showwarning("Input Needed", "Select a file and language(s).")
-            return
-        perform_translation(path, selected, status_label)
-
-    root = tk.Tk()
-    root.title("Excel Question Translator")
-
-    tk.Label(root, text="Select Excel File:").pack()
-    file_frame = tk.Frame(root)
-    file_frame.pack(pady=5)
-    file_entry = tk.Entry(file_frame, width=50)
-    file_entry.pack(side=tk.LEFT)
-    tk.Button(file_frame, text="Browse", command=browse_file).pack(side=tk.LEFT, padx=5)
-
-    tk.Label(root, text="Select Target Languages:").pack()
-    lang_frame = tk.Frame(root)
-    lang_frame.pack(pady=5)
-
-    lang_listbox = tk.Listbox(lang_frame, selectmode=tk.MULTIPLE, height=12, width=40)
-    lang_scrollbar = tk.Scrollbar(lang_frame, command=lang_listbox.yview)
-    lang_listbox.config(yscrollcommand=lang_scrollbar.set)
-    lang_listbox.pack(side=tk.LEFT, fill=tk.BOTH)
-    lang_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-
-    lang_codes = list(supported_langs.keys())
-    for code in lang_codes:
-        lang_listbox.insert(tk.END, f"{supported_langs[code]} ({code})")
-
-    tk.Button(root, text="Translate", command=start_translation, bg="#4CAF50", fg="white").pack(pady=10)
-    status_label = tk.Label(root, text="", fg="blue")
-    status_label.pack(pady=5)
-
-    root.mainloop()
+launch_gui = _launch_gui
 
 if __name__ == "__main__":
     launch_gui()

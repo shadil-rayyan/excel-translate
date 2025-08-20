@@ -1,0 +1,50 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Unit test / coverage
+.pytest_cache/
+.tox/
+.coverage*
+htmlcov/
+
+# Type checking / linters
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+*.env
+.envrc
+.python-version
+
+# Build / packaging outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+*.spec
+artifacts/
+
+# Installer/package outputs
+packaging/windows/Output/
+AppDir/
+pkg/
+pkgroot/
+ExcelTranslate-*-x86_64.AppImage
+ExcelTranslate.dmg
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log

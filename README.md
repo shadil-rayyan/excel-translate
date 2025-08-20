@@ -35,6 +35,16 @@ python main.py
 - Run tests: `pytest`
 - Lint/format: `ruff check . && black .`
 
+## Build & Distribution
+
+- See `docs/BUILD.md` for production packaging details (Windows/macOS/Linux), including installers, DMG/AppImage, and optional code signing.
+- CI builds artifacts on tag push. Create a release tag to publish installers and binaries:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Project Layout
 
 - `excel_translate/utils.py` — text utils and translation wrapper

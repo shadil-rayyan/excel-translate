@@ -36,12 +36,16 @@ jobs:
           path: |
             dist/ExcelTranslate/**
       - name: macOS codesign (optional)
-        if: runner.os == 'macOS' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_SIGN_IDENTITY != ''
+        if: runner.os == 'macOS'
         run: |
-          echo "Signing app bundle"
-          codesign --deep --force --options runtime \
-            --sign "$APPLE_SIGN_IDENTITY" \
-            dist/ExcelTranslate.app || true
+          if [ -n "$APPLE_SIGN_IDENTITY" ]; then
+            echo "Signing app bundle"
+            codesign --deep --force --options runtime \
+              --sign "$APPLE_SIGN_IDENTITY" \
+              dist/ExcelTranslate.app || true
+          else
+            echo "Skipping macOS codesign (no APPLE_SIGN_IDENTITY)"
+          fi
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -55,11 +59,15 @@ jobs:
             --window-size 500 300 --app-drop-link 400 150 \
             ExcelTranslate.dmg dist/ExcelTranslate.app
       - name: Notarize DMG (optional)
-        if: runner.os == 'macOS' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != ''
+        if: runner.os == 'macOS'
         run: |
-          xcrun notarytool submit ExcelTranslate.dmg \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait || true
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+            xcrun notarytool submit ExcelTranslate.dmg \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait || true
+          else
+            echo "Skipping notarization (Apple credentials not provided)"
+          fi
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -188,9 +196,12 @@ jobs:
           name: ExcelTranslate-Windows-NSIS
           path: packaging\windows\Output\ExcelTranslateSetup-NSIS.exe
       - name: Windows code signing (optional)
-        if: secrets.WINDOWS_CERT_PFX_BASE64 != '' && secrets.WINDOWS_CERT_PASSWORD != ''
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)) {
+            Write-Host "Skipping Windows signing (no certificate secrets)"
+            exit 0
+          }
           choco install windows-sdk-10.1 -y
           $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${env:WINDOWS_CERT_PFX_BASE64}"))
